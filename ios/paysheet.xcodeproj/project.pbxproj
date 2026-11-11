@@ -10,6 +10,7 @@
 		B1E00E65241D179500C384C1 /* TitaniumKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = B1E00E64241D179500C384C1 /* TitaniumKit.xcframework */; };
 		A1B2C3D4E5F6000000000011 /* PaysheetOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000001 /* PaysheetOptions.swift */; };
 		A1B2C3D4E5F6000000000012 /* PaysheetResults.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000002 /* PaysheetResults.swift */; };
+		A1B2C3D4E5F6000000000015 /* PaysheetPresentations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000005 /* PaysheetPresentations.swift */; };
 		A1B2C3D4E5F6000000000014 /* PaysheetStripe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000004 /* PaysheetStripe.swift */; };
 		A1B2C3D4E5F6000000000013 /* PaysheetSecretRequestProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000003 /* PaysheetSecretRequestProxy.swift */; };
 		DB34CDE0207B998A005F8E8C /* TiPaysheetModuleAssets.m in Sources */ = {isa = PBXBuildFile; fileRef = DB34CDDE207B998A005F8E8C /* TiPaysheetModuleAssets.m */; };
@@ -24,6 +25,7 @@
 		B1E00E64241D179500C384C1 /* TitaniumKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = TitaniumKit.xcframework; path = "$(TITANIUM_SDK)/iphone/Frameworks/TitaniumKit.xcframework"; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000000000001 /* PaysheetOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PaysheetOptions.swift; path = Classes/PaysheetOptions.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000000000002 /* PaysheetResults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PaysheetResults.swift; path = Classes/PaysheetResults.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000005 /* PaysheetPresentations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PaysheetPresentations.swift; path = Classes/PaysheetPresentations.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000000000004 /* PaysheetStripe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PaysheetStripe.swift; path = Classes/PaysheetStripe.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000000000003 /* PaysheetSecretRequestProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PaysheetSecretRequestProxy.swift; path = Classes/PaysheetSecretRequestProxy.swift; sourceTree = "<group>"; };
 		DB34CDDE207B998A005F8E8C /* TiPaysheetModuleAssets.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = TiPaysheetModuleAssets.m; path = Classes/TiPaysheetModuleAssets.m; sourceTree = SOURCE_ROOT; };
@@ -77,6 +79,7 @@
 				DB52E2421E9CD0F800AAAEE0 /* TiPaysheetModule.swift */,
 				A1B2C3D4E5F6000000000001 /* PaysheetOptions.swift */,
 				A1B2C3D4E5F6000000000002 /* PaysheetResults.swift */,
+				A1B2C3D4E5F6000000000005 /* PaysheetPresentations.swift */,
 				A1B2C3D4E5F6000000000004 /* PaysheetStripe.swift */,
 				A1B2C3D4E5F6000000000003 /* PaysheetSecretRequestProxy.swift */,
 			);
@@ -228,6 +231,7 @@
 			files = (
 				A1B2C3D4E5F6000000000011 /* PaysheetOptions.swift in Sources */,
 				A1B2C3D4E5F6000000000012 /* PaysheetResults.swift in Sources */,
+				A1B2C3D4E5F6000000000015 /* PaysheetPresentations.swift in Sources */,
 				A1B2C3D4E5F6000000000014 /* PaysheetStripe.swift in Sources */,
 				A1B2C3D4E5F6000000000013 /* PaysheetSecretRequestProxy.swift in Sources */,
 				DB34CDE0207B998A005F8E8C /* TiPaysheetModuleAssets.m in Sources */,
@@ -563,8 +567,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/stripe/stripe-ios-spm";
 			requirement = {
-				kind = upToNextMinorVersion;
-				minimumVersion = 26.16.1;
+				kind = exactVersion;
+				version = 26.16.1;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

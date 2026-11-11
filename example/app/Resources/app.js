@@ -179,7 +179,7 @@ async function manageCards() {
 					.then((r) => request.resolve(r.setupIntentClientSecret))
 					.catch((e) => request.reject(e.message));
 			}
-		}, (result) => show('customer sheet result', result));
+		}, (error, result) => show('customer sheet result', error ? error.code + ': ' + error.message : result));
 	} catch (e) {
 		show('error', e.message);
 	}
@@ -199,49 +199,101 @@ async function invalidSecret() {
 }
 
 // --------------------------------------------------------------------------------------------------------- self-test
-// Argument validation against the real module on the device. Logs "[SELFTEST] PASS n/n" for the test script.
+// The JavaScript contract against the real module on the device. Logs "[SELFTEST] PASS n/n" for the test script.
 
 async function selfTest() {
 	const cases = [
-		['no options', undefined, 'invalid_argument'],
-		['no secret', { merchantDisplayName: MERCHANT }, 'invalid_argument'],
-		['both secrets', { paymentIntentClientSecret: 'pi_1_secret_2', setupIntentClientSecret: 'seti_1_secret_2', merchantDisplayName: MERCHANT }, 'invalid_argument'],
-		['no merchant', { paymentIntentClientSecret: 'pi_1_secret_2' }, 'invalid_argument'],
-		['customer without secret', { paymentIntentClientSecret: 'pi_1_secret_2', merchantDisplayName: MERCHANT, customer: { id: 'cus_1' } }, 'invalid_argument'],
-		['customer with both secrets', { paymentIntentClientSecret: 'pi_1_secret_2', merchantDisplayName: MERCHANT, customer: { id: 'cus_1', ephemeralKeySecret: 'ek_1', customerSessionClientSecret: 'cuss_1' } }, 'invalid_argument'],
-		['bad colour', { paymentIntentClientSecret: 'pi_1_secret_2', merchantDisplayName: MERCHANT, appearance: { colors: { primary: 'blue' } } }, 'invalid_argument'],
-		['bad style', { paymentIntentClientSecret: 'pi_1_secret_2', merchantDisplayName: MERCHANT, style: 'sepia' }, 'invalid_argument'],
-		['google pay setup without currency', { setupIntentClientSecret: 'seti_1_secret_2', merchantDisplayName: MERCHANT, googlePay: { countryCode: 'US' } }, 'invalid_argument']
+		['no options', undefined, 'options'],
+		['no secret', { merchantDisplayName: MERCHANT }, 'paymentIntentClientSecret'],
+		['both secrets', { paymentIntentClientSecret: 'pi_1_secret_2', setupIntentClientSecret: 'seti_1_secret_2', merchantDisplayName: MERCHANT }, 'paymentIntentClientSecret'],
+		['no merchant', { paymentIntentClientSecret: 'pi_1_secret_2' }, 'merchantDisplayName'],
+		['customer without secret', { paymentIntentClientSecret: 'pi_1_secret_2', merchantDisplayName: MERCHANT, customer: { id: 'cus_1' } }, 'customer'],
+		['customer with both secrets', { paymentIntentClientSecret: 'pi_1_secret_2', merchantDisplayName: MERCHANT, customer: { id: 'cus_1', ephemeralKeySecret: 'ek_1', customerSessionClientSecret: 'cuss_1' } }, 'customer'],
+		['bad colour', { paymentIntentClientSecret: 'pi_1_secret_2', merchantDisplayName: MERCHANT, appearance: { colors: { primary: 'blue' } } }, 'appearance.colors.primary'],
+		['bad style', { paymentIntentClientSecret: 'pi_1_secret_2', merchantDisplayName: MERCHANT, style: 'sepia' }, 'style'],
+		['google pay setup without currency', { setupIntentClientSecret: 'seti_1_secret_2', merchantDisplayName: MERCHANT, googlePay: { countryCode: 'US' } }, 'googlePay.currencyCode']
 	];
 	let passed = 0;
-	const total = cases.length + 4;
+	const total = cases.length + 6;
 	const check = (name, ok, detail) => {
 		if (ok) {
 			passed++;
 		}
 		Ti.API.info('[SELFTEST] ' + (ok ? 'ok   ' : 'FAIL ') + name + (ok ? '' : ' ' + JSON.stringify(detail)));
 	};
+	const rejection = async (promise) => {
+		try {
+			return { resolved: await promise };
+		} catch (e) {
+			return { error: e };
+		}
+	};
+	const isArgumentError = (r, option) => r.error instanceof Error && r.error.code === 'invalid_argument'
+		&& r.error.option === option && typeof r.error.message === 'string';
 
 	check('initialize rejects a secret key', Paysheet.initialize({ publishableKey: 'sk_test_x' }) === false, null);
-	for (const [name, options, code] of cases) {
-		const r = await Paysheet.presentPaymentSheet(options);
-		check(name, r.status === 'failed' && r.error && r.error.code === code && typeof r.error.message === 'string', r);
+	for (const [name, options, option] of cases) {
+		const r = await rejection(Paysheet.presentPaymentSheet(options));
+		check(name + ' rejects', isArgumentError(r, option), r.error ? { code: r.error.code, option: r.error.option } : r);
 	}
-	const cs = await Paysheet.presentCustomerSheet({
+	const cs = await rejection(Paysheet.presentCustomerSheet({
 		merchantDisplayName: MERCHANT, customer: { id: 'cus_1', customerSessionClientSecret: 'cuss_1' }
-	});
-	check('customer sheet needs fetchSetupIntentClientSecret', cs.status === 'failed' && cs.error.code === 'invalid_argument', cs);
+	}));
+	check('customer sheet needs fetchSetupIntentClientSecret', isArgumentError(cs, 'fetchSetupIntentClientSecret'), cs);
 
-	// Callback and Promise both fire, once each.
-	let calls = 0;
-	const viaPromise = await Paysheet.presentPaymentSheet({}, () => { calls++; });
+	let threw = false;
+	try {
+		Paysheet.presentPaymentSheet(42).catch(() => {});
+	} catch (e) {
+		threw = true;
+	}
+	check('never throws synchronously', !threw, null);
+
+	// Callback (Node-style) and Promise both settle, once each.
+	const calls = [];
+	const viaPromise = await rejection(Paysheet.presentPaymentSheet({}, (error, result) => calls.push([error, result])));
 	await new Promise((resolve) => setTimeout(resolve, 300));
-	check('callback and promise settle once each', calls === 1 && viaPromise.status === 'failed', { calls });
+	check('callback gets (error) once and the Promise rejects', calls.length === 1 && calls[0][0] instanceof Error
+		&& calls[0][1] === undefined && viaPromise.error instanceof Error, { calls: calls.length });
 
 	check('handleURL ignores foreign URLs', Paysheet.handleURL('https://example.com/') === false, null);
+	Ti.API.info('[SELFTEST] stripe ' + Paysheet.stripeVersion + ' (module built against ' + Paysheet.stripeVersionRequired + ')');
+	check('present functions come from the shared JavaScript layer', typeof Paysheet.presentPaymentSheet === 'function'
+		&& typeof Paysheet._presentPaymentSheet === 'function', null);
 
 	Ti.API.info('[SELFTEST] ' + (passed === total ? 'PASS ' : 'FAIL ') + passed + '/' + total);
 	show('self-test', passed + '/' + total + ' passed');
+}
+
+// --------------------------------------------------------------------------------------------- lifecycle scenarios
+
+// Android: start a presentation while the app is in the background (press Home within 5 s). Android does not let a
+// background app open an activity; the result must be 'unavailable', and the next presentation must not be 'busy'.
+function payInBackground() {
+	show('background', 'press Home now; paying in 5 s');
+	setTimeout(() => pay('none'), 5000);
+}
+
+// iOS: present from a modal window, then close that window under the sheet (as an app's sign-out flow would).
+// Stripe never reports a result for it; the next presentation must settle it as 'interrupted' instead of 'busy'.
+async function closeWindowUnderSheet() {
+	try {
+		await ensureInitialized();
+		const s = await post('/payment-sheet', { amount: 1099, customer: 'none' });
+		const modal = Ti.UI.createWindow({ backgroundColor: '#fff', modal: true });
+		modal.add(Ti.UI.createLabel({ text: 'modal window' }));
+		modal.addEventListener('open', () => {
+			Paysheet.presentPaymentSheet({ paymentIntentClientSecret: s.paymentIntentClientSecret, merchantDisplayName: MERCHANT })
+				.then((r) => show('closed-under result', r));
+			setTimeout(() => {
+				modal.close();
+				show('closed-under', 'window closed under the sheet; now pay again');
+			}, 6000);
+		});
+		modal.open();
+	} catch (e) {
+		show('error', e.message);
+	}
 }
 
 // ------------------------------------------------------------------------------------------------------------ screen
@@ -253,6 +305,11 @@ button('Save a card (setup mode)', saveCard);
 button('Manage saved cards (CustomerSheet)', manageCards);
 button('Invalid client secret', invalidSecret);
 button('Run self-test', selfTest);
+if (Ti.Platform.osname === 'android') {
+	button('Pay in 5 s (press Home: background start)', payInBackground);
+} else {
+	button('Close the window under the sheet', closeWindowUnderSheet);
+}
 scroll.add(status);
 scroll.add(log);
 win.open();

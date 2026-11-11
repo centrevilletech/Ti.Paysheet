@@ -82,7 +82,8 @@ enum PaysheetStripe {
         break
       }
     }
-    NSLog("[WARN] [TiPaysheet] sheet failed: %@", String(describing: error))
+    // Code and type only: Stripe's errors can carry request details (and the intent's client secret) in userInfo.
+    NSLog("[WARN] [TiPaysheet] sheet failed: code=%@ type=%@", code ?? fallback, type ?? "-")
     return PaysheetResults.failed(intentId: intentId, apiCode: code, fallbackCode: fallback,
                                   message: error.localizedDescription,
                                   declineCode: ns.userInfo[STPError.stripeDeclineCodeKey] as? String, type: type)

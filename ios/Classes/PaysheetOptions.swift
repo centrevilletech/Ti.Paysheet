@@ -12,6 +12,8 @@ import Foundation
 enum PaysheetOptions {
 
   struct Invalid: Error {
+    /// The offending option, e.g. "customer.id" or "appearance.colors.primary".
+    let option: String
     let message: String
   }
 
@@ -77,7 +79,7 @@ enum PaysheetOptions {
     let o = try object(raw, "options")
     let key = try requiredString(o, "publishableKey", "publishableKey")
     if !key.hasPrefix("pk_") {
-      throw Invalid(message: "publishableKey must be a publishable key (pk_test_… or pk_live_…), never a secret key")
+      throw Invalid(option: "publishableKey", message: "publishableKey must be a publishable key (pk_test_… or pk_live_…), never a secret key")
     }
     return Initialize(publishableKey: key, stripeAccountId: try optionalString(o, "stripeAccountId", "stripeAccountId"))
   }
@@ -88,7 +90,7 @@ enum PaysheetOptions {
     let pi = try optionalString(o, "paymentIntentClientSecret", "paymentIntentClientSecret")
     let si = try optionalString(o, "setupIntentClientSecret", "setupIntentClientSecret")
     if (pi == nil) == (si == nil) {
-      throw Invalid(message: "exactly one of paymentIntentClientSecret and setupIntentClientSecret is required")
+      throw Invalid(option: "paymentIntentClientSecret", message: "exactly one of paymentIntentClientSecret and setupIntentClientSecret is required")
     }
     s.mode = pi != nil ? "payment" : "setup"
     s.intentClientSecret = pi ?? si
@@ -100,7 +102,7 @@ enum PaysheetOptions {
       s.customerSessionClientSecret = try optionalString(c, "customerSessionClientSecret", "customer.customerSessionClientSecret")
       s.ephemeralKeySecret = try optionalString(c, "ephemeralKeySecret", "customer.ephemeralKeySecret")
       if (s.customerSessionClientSecret == nil) == (s.ephemeralKeySecret == nil) {
-        throw Invalid(message: "customer needs exactly one of customerSessionClientSecret and ephemeralKeySecret")
+        throw Invalid(option: "customer", message: "customer needs exactly one of customerSessionClientSecret and ephemeralKeySecret")
       }
     }
 
@@ -121,12 +123,12 @@ enum PaysheetOptions {
                                                "googlePay.countryCode")
       if let currency = try optionalString(g, "currencyCode", "googlePay.currencyCode") {
         if !matches(currency, "^[A-Za-z]{3}$") {
-          throw Invalid(message: "googlePay.currencyCode must be a three-letter ISO 4217 code")
+          throw Invalid(option: "googlePay.currencyCode", message: "googlePay.currencyCode must be a three-letter ISO 4217 code")
         }
         s.googlePayCurrencyCode = currency.uppercased()
       }
       if s.mode == "setup" && s.googlePayCurrencyCode == nil {
-        throw Invalid(message: "googlePay.currencyCode is required in setup mode")
+        throw Invalid(option: "googlePay.currencyCode", message: "googlePay.currencyCode is required in setup mode")
       }
     }
     return s
@@ -138,16 +140,16 @@ enum PaysheetOptions {
     s.mode = "customer"
     try parseCommon(o, &s)
     guard let customer = value(o, "customer") else {
-      throw Invalid(message: "customer is required")
+      throw Invalid(option: "customer", message: "customer is required")
     }
     let c = try object(customer, "customer")
     s.customerId = try requiredString(c, "id", "customer.id")
     if value(c, "ephemeralKeySecret") != nil {
-      throw Invalid(message: "presentCustomerSheet needs customer.customerSessionClientSecret; ephemeral keys are not supported")
+      throw Invalid(option: "customer.ephemeralKeySecret", message: "presentCustomerSheet needs customer.customerSessionClientSecret; ephemeral keys are not supported")
     }
     s.customerSessionClientSecret = try requiredString(c, "customerSessionClientSecret", "customer.customerSessionClientSecret")
     if value(o, "fetchSetupIntentClientSecret") == nil {
-      throw Invalid(message: "fetchSetupIntentClientSecret is required")
+      throw Invalid(option: "fetchSetupIntentClientSecret", message: "fetchSetupIntentClientSecret is required")
     }
     s.headerTitle = try optionalString(o, "headerTitle", "headerTitle")
     s.applePayEnabled = try optionalBool(o, "applePay", "applePay", false)
@@ -161,7 +163,7 @@ enum PaysheetOptions {
     s.merchantDisplayName = try requiredString(o, "merchantDisplayName", "merchantDisplayName")
     s.returnURL = try optionalString(o, "returnURL", "returnURL")
     if let url = s.returnURL, !matches(url, "^[A-Za-z][A-Za-z0-9+.-]*:.*") {
-      throw Invalid(message: "returnURL must be an absolute URL with your app's scheme, e.g. myapp://stripe-redirect")
+      throw Invalid(option: "returnURL", message: "returnURL must be an absolute URL with your app's scheme, e.g. myapp://stripe-redirect")
     }
     s.style = try optionalEnum(o, "style", "style", styles, "automatic")
 
@@ -213,7 +215,7 @@ enum PaysheetOptions {
       a.fontFamily = try optionalString(f, "family", "appearance.font.family")
       a.fontScale = try optionalNumber(f, "scale", "appearance.font.scale")
       if a.fontScale == 0 {
-        throw Invalid(message: "appearance.font.scale must be greater than 0")
+        throw Invalid(option: "appearance.font.scale", message: "appearance.font.scale must be greater than 0")
       }
     }
     if let button = value(o, "primaryButton") {
@@ -246,16 +248,16 @@ enum PaysheetOptions {
     var out: [String: UInt32] = [:]
     for key in m.keys.sorted() {
       guard allowed.contains(key) else {
-        throw Invalid(message: "\(path).\(key) is not a known colour")
+        throw Invalid(option: "\(path).\(key)", message: "\(path).\(key) is not a known colour")
       }
       guard let v = value(m, key) else {
         continue
       }
       guard let s = v as? String else {
-        throw Invalid(message: "\(path).\(key) must be a colour string such as '#0A84FF'")
+        throw Invalid(option: "\(path).\(key)", message: "\(path).\(key) must be a colour string such as '#0A84FF'")
       }
       guard let argb = parseColor(s) else {
-        throw Invalid(message: "\(path).\(key): invalid colour '\(s)' (use #RGB, #RRGGBB or #AARRGGBB)")
+        throw Invalid(option: "\(path).\(key)", message: "\(path).\(key): invalid colour '\(s)' (use #RGB, #RRGGBB or #AARRGGBB)")
       }
       out[key] = argb
     }
@@ -297,14 +299,14 @@ enum PaysheetOptions {
 
   private static func object(_ raw: Any?, _ path: String) throws -> [String: Any] {
     guard let o = raw as? [String: Any] else {
-      throw Invalid(message: "\(path) must be an object")
+      throw Invalid(option: path, message: "\(path) must be an object")
     }
     return o
   }
 
   private static func requiredString(_ o: [String: Any], _ key: String, _ path: String) throws -> String {
     guard let s = try optionalString(o, key, path) else {
-      throw Invalid(message: "\(path) is required")
+      throw Invalid(option: path, message: "\(path) is required")
     }
     return s
   }
@@ -314,11 +316,11 @@ enum PaysheetOptions {
       return nil
     }
     guard let s = v as? String else {
-      throw Invalid(message: "\(path) must be a string")
+      throw Invalid(option: path, message: "\(path) must be a string")
     }
     let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed.isEmpty {
-      throw Invalid(message: "\(path) must not be empty")
+      throw Invalid(option: path, message: "\(path) must not be empty")
     }
     return trimmed
   }
@@ -335,7 +337,7 @@ enum PaysheetOptions {
       return fallback
     }
     guard isBoolean(v), let n = v as? NSNumber else {
-      throw Invalid(message: "\(path) must be a boolean")
+      throw Invalid(option: path, message: "\(path) must be a boolean")
     }
     return n.boolValue
   }
@@ -345,11 +347,11 @@ enum PaysheetOptions {
       return nil
     }
     guard !isBoolean(v), let n = v as? NSNumber else {
-      throw Invalid(message: "\(path) must be a number")
+      throw Invalid(option: path, message: "\(path) must be a number")
     }
     let d = n.doubleValue
     if d.isNaN || d.isInfinite || d < 0 {
-      throw Invalid(message: "\(path) must be a number of 0 or more")
+      throw Invalid(option: path, message: "\(path) must be a number of 0 or more")
     }
     return d
   }
@@ -360,14 +362,14 @@ enum PaysheetOptions {
       return fallback
     }
     guard allowed.contains(s) else {
-      throw Invalid(message: "\(path) must be one of \(allowed.joined(separator: ", "))")
+      throw Invalid(option: path, message: "\(path) must be one of \(allowed.joined(separator: ", "))")
     }
     return s
   }
 
   private static func countryCode(_ s: String, _ path: String) throws -> String {
     guard matches(s, "^[A-Za-z]{2}$") else {
-      throw Invalid(message: "\(path) must be a two-letter ISO 3166 country code")
+      throw Invalid(option: path, message: "\(path) must be a two-letter ISO 3166 country code")
     }
     return s.uppercased()
   }

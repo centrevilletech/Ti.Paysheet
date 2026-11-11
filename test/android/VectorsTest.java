@@ -51,10 +51,11 @@ public final class VectorsTest
 					pass();
 				}
 			} catch (Options.InvalidException e) {
-				if (Objects.equals(c.get("error"), e.getMessage())) {
+				if (Objects.equals(c.get("error"), e.getMessage())
+					&& (!c.containsKey("option") || Objects.equals(c.get("option"), e.option))) {
 					pass();
 				} else {
-					fail(name, "expected " + (c.containsKey("error") ? "error '" + c.get("error") + "'" : "success") + ", got error '" + e.getMessage() + "'");
+					fail(name, "expected " + (c.containsKey("error") ? "error '" + c.get("error") + "'" : "success") + ", got error '" + e.getMessage() + "' on '" + e.option + "'");
 				}
 			}
 		}
@@ -76,6 +77,12 @@ public final class VectorsTest
 			Map<String, Object> got = Results.failed((String) c.get("intentId"), (String) c.get("apiCode"),
 				(String) c.get("fallbackCode"), (String) c.get("message"), (String) c.get("declineCode"), (String) c.get("type"));
 			check("result " + c.get("name"), c.get("expect"), got);
+		}
+
+		for (Object o : asList(v.get("argumentErrors"))) {
+			Map<String, Object> c = asMap(o);
+			check("argument error " + c.get("code"), c.get("expect"),
+				Results.argumentError((String) c.get("code"), (String) c.get("option"), (String) c.get("message")));
 		}
 
 		System.out.println((failed == 0 ? "PASS " : "FAIL ") + passed + "/" + (passed + failed) + " (Java)");

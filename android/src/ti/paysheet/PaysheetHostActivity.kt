@@ -67,6 +67,11 @@ class PaysheetHostActivity : ComponentActivity() {
 			finishQuietly()
 			return
 		}
+		if (savedInstanceState == null && !PaysheetModule.checkIn(requestId)) {
+			// Started after the presentation was already settled (the watchdog fired): show nothing.
+			finishQuietly()
+			return
+		}
 		if (savedInstanceState != null && !PaysheetModule.isLive(requestId)) {
 			// Recreated in a new process (it was killed while the sheet, or a browser or bank app on top of it,
 			// was open). Titanium cannot restore its own windows without their script: it closes them and
@@ -88,7 +93,7 @@ class PaysheetHostActivity : ComponentActivity() {
 				paymentSheet = PaymentSheet.Builder(::onPaymentSheetResult).build(this)
 			}
 		} catch (e: Exception) {
-			Log.e(PaysheetModule.TAG, "could not create the sheet", e)
+			Log.e(PaysheetModule.TAG, "could not create the sheet (${e.javaClass.simpleName})")
 			deliver(Results.failed(intentId(), null, Results.SDK_ERROR, e.message, null, null))
 			return
 		}
@@ -98,7 +103,7 @@ class PaysheetHostActivity : ComponentActivity() {
 			try {
 				present()
 			} catch (e: Exception) {
-				Log.e(PaysheetModule.TAG, "could not present the sheet", e)
+				Log.e(PaysheetModule.TAG, "could not present the sheet (${e.javaClass.simpleName})")
 				deliver(Results.failed(intentId(), null, Results.SDK_ERROR, e.message, null, null))
 			}
 		}
@@ -165,16 +170,18 @@ class PaysheetHostActivity : ComponentActivity() {
 	}
 
 	private fun failure(error: Throwable): HashMap<String, Any?> {
-		Log.w(PaysheetModule.TAG, "sheet failed: ${error.javaClass.simpleName}: ${error.message}")
 		val stripeError = (error as? StripeException)?.stripeError
 		// Stripe's loading exceptions are internal classes: their name (unless R8 renamed it) and their message are
 		// the only handle on them.
 		val terminal = error.javaClass.simpleName.let {
 			it == "PaymentIntentInTerminalState" || it == "SetupIntentInTerminalState"
 		} || Regex("cannot set up a (PaymentIntent|SetupIntent) in status").containsMatchIn(error.message ?: "")
+		val code = stripeError?.code ?: stripeError?.type
+		// Code and type only: exception messages can carry request details.
+		Log.w(PaysheetModule.TAG, "sheet failed: code=${code ?: if (terminal) Results.INTENT_IN_TERMINAL_STATE else Results.SDK_ERROR} type=${stripeError?.type ?: "-"}")
 		return Results.failed(
 			intentId(),
-			stripeError?.code ?: stripeError?.type,
+			code,
 			if (terminal) Results.INTENT_IN_TERMINAL_STATE else Results.SDK_ERROR,
 			stripeError?.message ?: error.localizedMessage,
 			stripeError?.declineCode,
@@ -195,7 +202,15 @@ class PaysheetHostActivity : ComponentActivity() {
 	}
 
 	private fun becomeOpaque() {
-		window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0xFF202124.toInt()))
+		// The app theme's own window background (this activity's theme is translucent).
+		val attrs = applicationContext.obtainStyledAttributes(
+			applicationInfo.theme,
+			intArrayOf(android.R.attr.windowBackground, android.R.attr.colorBackground),
+		)
+		val background = attrs.getDrawable(0)
+			?: android.graphics.drawable.ColorDrawable(attrs.getColor(1, android.graphics.Color.WHITE))
+		attrs.recycle()
+		window.setBackgroundDrawable(background)
 		if (Build.VERSION.SDK_INT >= 30) {
 			setTranslucent(false)
 		} else {

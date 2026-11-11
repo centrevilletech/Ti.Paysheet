@@ -7,27 +7,30 @@ import TitaniumKit
 import UIKit
 @_implementationOnly import StripePaymentSheet
 
+/// The public `presentPaymentSheet` / `presentCustomerSheet` are in assets/ti.paysheet.js (shared with Android);
+/// they call the `_present…` methods below, which resolve with an outcome, a runtime condition or an argument-error
+/// marker, and never throw.
 @objc(TiPaysheetModule)
 class TiPaysheetModule: TiModule {
 
-  /// The one presentation in flight. Main thread only.
-  private var active: Presentation?
+  /// The stripe-ios version this module was compiled against (ios/paysheet.xcodeproj pins it exactly). The app must
+  /// link exactly this version: the module's object code depends on Stripe's struct layouts.
+  static let builtAgainstStripeVersion = "26.16.1"
+
+  private lazy var presentations = PaysheetPresentations(scheduler: PaysheetMainQueueScheduler())
   private var initialized = false
 
-  private final class Presentation {
-    let intentId: String?
-    let promise: KrollPromise
-    let callback: KrollCallback?
-    let fetchSetupIntent: KrollCallback?
-    var settled = false
-    /// Keeps the sheet alive while it is on screen.
-    var sheet: AnyObject?
+  /// UIKit state of the presentation in flight, for the "still on screen" check.
+  private final class Screen {
+    weak var presenter: UIViewController?
+    weak var sheetController: UIViewController?
+    var sheet: AnyObject? // keeps the Stripe sheet alive while it is up
 
-    init(intentId: String?, promise: KrollPromise, callback: KrollCallback?, fetchSetupIntent: KrollCallback?) {
-      self.intentId = intentId
-      self.promise = promise
-      self.callback = callback
-      self.fetchSetupIntent = fetchSetupIntent
+    var isOnScreen: Bool {
+      if let vc = sheetController {
+        return vc.presentingViewController != nil || vc.viewIfLoaded?.window != nil
+      }
+      return presenter?.viewIfLoaded?.window != nil
     }
   }
 
@@ -42,7 +45,7 @@ class TiPaysheetModule: TiModule {
   override func startup() {
     super.startup()
     // Titanium posts this for every URL the app is opened with (application:openURL: and the scene equivalent).
-    // Stripe ignores URLs that are not its own, so forwarding all of them is safe.
+    // Stripe ignores URLs that are not its own. URLs are never logged: Stripe's return URLs carry client secrets.
     NotificationCenter.default.addObserver(self, selector: #selector(didReceiveURL(_:)),
                                            name: NSNotification.Name(rawValue: kTiApplicationLaunchedFromURL),
                                            object: nil)
@@ -56,8 +59,7 @@ class TiPaysheetModule: TiModule {
     guard let string = notification.userInfo?["url"] as? String, let url = URL(string: string) else {
       return
     }
-    let handled = StripeAPI.handleURLCallback(with: url)
-    NSLog("[DEBUG] [TiPaysheet] URL %@ %@ by Stripe", string, handled ? "handled" : "not handled")
+    StripeAPI.handleURLCallback(with: url)
   }
 
   // MARK: - JavaScript API
@@ -74,7 +76,7 @@ class TiPaysheetModule: TiModule {
     } catch let e as PaysheetOptions.Invalid {
       NSLog("[ERROR] [TiPaysheet] initialize: %@", e.message)
     } catch {
-      NSLog("[ERROR] [TiPaysheet] initialize: %@", error.localizedDescription)
+      NSLog("[ERROR] [TiPaysheet] initialize failed")
     }
     return NSNumber(value: false)
   }
@@ -83,13 +85,22 @@ class TiPaysheetModule: TiModule {
     return NSNumber(value: initialized)
   }
 
-  @objc(presentPaymentSheet:)
-  func presentPaymentSheet(arguments: [Any]?) -> JSValue? {
+  /// The stripe-ios version the app links, and the one the module was built against (for diagnostics).
+  @objc public var stripeVersion: String {
+    return STPAPIClient.STPSDKVersion
+  }
+
+  @objc public var stripeVersionRequired: String {
+    return TiPaysheetModule.builtAgainstStripeVersion
+  }
+
+  @objc(_presentPaymentSheet:)
+  func _presentPaymentSheet(arguments: [Any]?) -> JSValue? {
     return present(arguments: arguments, customer: false)
   }
 
-  @objc(presentCustomerSheet:)
-  func presentCustomerSheet(arguments: [Any]?) -> JSValue? {
+  @objc(_presentCustomerSheet:)
+  func _presentCustomerSheet(arguments: [Any]?) -> JSValue? {
     return present(arguments: arguments, customer: true)
   }
 
@@ -110,16 +121,14 @@ class TiPaysheetModule: TiModule {
   // MARK: - Presentation
 
   private func present(arguments: [Any]?, customer: Bool) -> JSValue? {
-    guard let context = currentContext() else {
+    // Without a JavaScript context there is nothing to return a Promise into; assets/ti.paysheet.js turns the
+    // missing Promise into a rejected one ('unavailable'). It only happens when called outside JavaScript.
+    guard let context = currentContext(), let promise = KrollPromise(in: context) else {
       return nil
     }
-    let promise = KrollPromise(in: context)!
     let raw: Any? = arguments?.first
-    let callback = (arguments?.count ?? 0) > 1 ? arguments?[1] as? KrollCallback : nil
     let name = customer ? "presentCustomerSheet" : "presentPaymentSheet"
-
-    func settleNow(_ result: [String: Any]) {
-      callback?.call([result], thisObject: self)
+    func resolve(_ result: [String: Any]) {
       promise.resolve([result])
     }
 
@@ -128,11 +137,10 @@ class TiPaysheetModule: TiModule {
       sheet = customer ? try PaysheetOptions.parseCustomerSheet(raw) : try PaysheetOptions.parsePaymentSheet(raw)
     } catch let e as PaysheetOptions.Invalid {
       NSLog("[ERROR] [TiPaysheet] %@: %@", name, e.message)
-      settleNow(PaysheetResults.moduleError(intentId: nil, code: PaysheetResults.invalidArgument, message: e.message))
+      resolve(PaysheetResults.argumentError(code: PaysheetResults.invalidArgument, option: e.option, message: e.message))
       return promise.jsValue
     } catch {
-      settleNow(PaysheetResults.moduleError(intentId: nil, code: PaysheetResults.invalidArgument,
-                                            message: error.localizedDescription))
+      resolve(PaysheetResults.argumentError(code: PaysheetResults.invalidArgument, option: nil, message: "invalid options"))
       return promise.jsValue
     }
 
@@ -142,125 +150,131 @@ class TiPaysheetModule: TiModule {
       if fetch == nil {
         let message = "fetchSetupIntentClientSecret must be a function"
         NSLog("[ERROR] [TiPaysheet] %@: %@", name, message)
-        settleNow(PaysheetResults.moduleError(intentId: nil, code: PaysheetResults.invalidArgument, message: message))
+        resolve(PaysheetResults.argumentError(code: PaysheetResults.invalidArgument,
+                                              option: "fetchSetupIntentClientSecret", message: message))
         return promise.jsValue
       }
     }
 
-    let intentId = PaysheetOptions.intentId(fromClientSecret: sheet.intentClientSecret)
     if !initialized {
-      settleNow(PaysheetResults.moduleError(intentId: intentId, code: PaysheetResults.notInitialized,
+      resolve(PaysheetResults.argumentError(code: PaysheetResults.notInitialized, option: nil,
                                             message: "Call initialize({ publishableKey }) before presenting a sheet."))
       return promise.jsValue
     }
-    if active != nil {
-      settleNow(PaysheetResults.moduleError(intentId: intentId, code: PaysheetResults.busy,
-                                            message: "Another payment sheet is already open."))
-      return promise.jsValue
-    }
-    guard let presenter = TiApp.controller()?.topPresentedController(), presenter.view.window != nil else {
-      settleNow(PaysheetResults.moduleError(intentId: intentId, code: PaysheetResults.unavailable,
-                                            message: "There is no window to present the sheet from."))
+
+    let intentId = PaysheetOptions.intentId(fromClientSecret: sheet.intentClientSecret)
+    let linked = STPAPIClient.STPSDKVersion
+    if linked != TiPaysheetModule.builtAgainstStripeVersion {
+      NSLog("[ERROR] [TiPaysheet] stripe-ios %@ is linked, but this module was built against %@", linked,
+            TiPaysheetModule.builtAgainstStripeVersion)
+      resolve(PaysheetResults.moduleError(
+        intentId: intentId, code: PaysheetResults.unavailable,
+        message: "The app links stripe-ios \(linked), but ti.paysheet was built against stripe-ios "
+          + "\(TiPaysheetModule.builtAgainstStripeVersion). Resolve exactly that version (see the module's README)."))
       return promise.jsValue
     }
 
-    let presentation = Presentation(intentId: intentId, promise: promise, callback: callback, fetchSetupIntent: fetch)
-    active = presentation
+    let screen = Screen()
+    let asker: PaysheetPresentations.Asker? = fetch.map { fetch in
+      return { [weak self] request in
+        guard let self = self else { throw PaysheetSecretRequestProxy.gone }
+        let proxy = PaysheetSecretRequestProxy.make(context: self.executionContext, request: request)
+        fetch.call([proxy], thisObject: self)
+      }
+    }
+    guard let id = presentations.begin(intentId: intentId, sink: { result in
+      screen.sheet = nil
+      resolve(result)
+    }, asker: asker, isOnScreen: { screen.isOnScreen }) else {
+      resolve(PaysheetResults.moduleError(intentId: intentId, code: PaysheetResults.busy,
+                                          message: "Another payment sheet is already open."))
+      return promise.jsValue
+    }
+
+    guard let presenter = TiApp.controller()?.topPresentedController(), presenter.view.window != nil else {
+      presentations.startFailed(id, "There is no window to present the sheet from.")
+      return promise.jsValue
+    }
+    screen.presenter = presenter
     if customer {
-      presentCustomerSheet(sheet, from: presenter, presentation)
+      presentCustomerSheet(sheet, from: presenter, id: id, screen: screen)
     } else {
-      presentPaymentSheet(sheet, from: presenter, presentation)
+      presentPaymentSheet(sheet, from: presenter, id: id, screen: screen)
+    }
+    // The sheet's own view controller exists once the presentation has started.
+    DispatchQueue.main.async {
+      if let vc = presenter.presentedViewController {
+        screen.sheetController = vc
+      }
     }
     return promise.jsValue
   }
 
-  private func presentPaymentSheet(_ s: PaysheetOptions.Sheet, from presenter: UIViewController,
-                                   _ presentation: Presentation) {
+  private func presentPaymentSheet(_ s: PaysheetOptions.Sheet, from presenter: UIViewController, id: String,
+                                   screen: Screen) {
     let configuration = PaysheetStripe.paymentSheetConfiguration(s)
-    let paymentSheet: PaymentSheet
-    if s.mode == "payment" {
-      paymentSheet = PaymentSheet(paymentIntentClientSecret: s.intentClientSecret!, configuration: configuration)
-    } else {
-      paymentSheet = PaymentSheet(setupIntentClientSecret: s.intentClientSecret!, configuration: configuration)
-    }
-    presentation.sheet = paymentSheet
+    let intentId = PaysheetOptions.intentId(fromClientSecret: s.intentClientSecret)
+    let paymentSheet = s.mode == "payment"
+      ? PaymentSheet(paymentIntentClientSecret: s.intentClientSecret!, configuration: configuration)
+      : PaymentSheet(setupIntentClientSecret: s.intentClientSecret!, configuration: configuration)
+    screen.sheet = paymentSheet
     paymentSheet.present(from: presenter) { [weak self] result in
       guard let self = self else { return }
       switch result {
       case .completed:
-        self.deliver(presentation, PaysheetResults.status(PaysheetResults.completed, intentId: presentation.intentId))
+        self.presentations.deliver(id, PaysheetResults.status(PaysheetResults.completed, intentId: intentId))
       case .canceled:
-        self.deliver(presentation, PaysheetResults.status(PaysheetResults.canceled, intentId: presentation.intentId))
+        self.presentations.deliver(id, PaysheetResults.status(PaysheetResults.canceled, intentId: intentId))
       case .failed(let error):
-        self.deliver(presentation, PaysheetStripe.failure(error, intentId: presentation.intentId))
+        self.presentations.deliver(id, PaysheetStripe.failure(error, intentId: intentId))
       }
     }
   }
 
-  private func presentCustomerSheet(_ s: PaysheetOptions.Sheet, from presenter: UIViewController,
-                                    _ presentation: Presentation) {
+  private func presentCustomerSheet(_ s: PaysheetOptions.Sheet, from presenter: UIViewController, id: String,
+                                    screen: Screen) {
     let customerId = s.customerId!
     let sessionSecret = s.customerSessionClientSecret!
     let intentConfiguration = CustomerSheet.IntentConfiguration(setupIntentClientSecretProvider: { [weak self] in
-      guard let self = self else {
-        throw NSError(domain: "ti.paysheet", code: 1, userInfo: [NSLocalizedDescriptionKey: "The module is gone."])
-      }
-      return try await self.requestSetupIntentSecret(presentation)
+      guard let self = self else { throw PaysheetSecretRequestProxy.gone }
+      return try await self.requestSetupIntentSecret(id)
     })
     let customerSheet = CustomerSheet(configuration: PaysheetStripe.customerSheetConfiguration(s),
                                       intentConfiguration: intentConfiguration,
                                       customerSessionClientSecretProvider: {
       return CustomerSessionClientSecret(customerId: customerId, clientSecret: sessionSecret)
     })
-    presentation.sheet = customerSheet
+    screen.sheet = customerSheet
     customerSheet.present(from: presenter) { [weak self] result in
       guard let self = self else { return }
       switch result {
       case .selected(let selection):
-        let (id, label) = PaysheetStripe.option(selection)
-        self.deliver(presentation, PaysheetResults.customer(PaysheetResults.selected, optionId: id, optionLabel: label))
+        let (optionId, label) = PaysheetStripe.option(selection)
+        self.presentations.deliver(id, PaysheetResults.customer(PaysheetResults.selected, optionId: optionId, optionLabel: label))
       case .canceled(let selection):
-        let (id, label) = PaysheetStripe.option(selection)
-        self.deliver(presentation, PaysheetResults.customer(PaysheetResults.canceled, optionId: id, optionLabel: label))
+        let (optionId, label) = PaysheetStripe.option(selection)
+        self.presentations.deliver(id, PaysheetResults.customer(PaysheetResults.canceled, optionId: optionId, optionLabel: label))
       case .error(let error):
-        self.deliver(presentation, PaysheetStripe.failure(error, intentId: nil))
+        self.presentations.deliver(id, PaysheetStripe.failure(error, intentId: nil))
       }
-    }
-  }
-
-  /// Settles a presentation exactly once.
-  private func deliver(_ presentation: Presentation, _ result: [String: Any]) {
-    let run = { [weak self] in
-      if presentation.settled {
-        return
-      }
-      presentation.settled = true
-      if self?.active === presentation {
-        self?.active = nil
-      }
-      presentation.sheet = nil
-      presentation.callback?.call([result], thisObject: self)
-      presentation.promise.resolve([result])
-    }
-    if Thread.isMainThread {
-      run()
-    } else {
-      DispatchQueue.main.async(execute: run)
     }
   }
 
   /// Asks JavaScript for a SetupIntent client secret (CustomerSheet adding a payment method).
-  private func requestSetupIntentSecret(_ presentation: Presentation) async throws -> String {
+  private func requestSetupIntentSecret(_ id: String) async throws -> String {
     return try await withCheckedThrowingContinuation { continuation in
       DispatchQueue.main.async { [weak self] in
-        guard let self = self, let fetch = presentation.fetchSetupIntent, !presentation.settled else {
-          continuation.resume(throwing: PaysheetSecretRequestProxy.error(
-            "The app is no longer able to create a SetupIntent; close and reopen the sheet."))
+        guard let self = self else {
+          continuation.resume(throwing: PaysheetSecretRequestProxy.gone)
           return
         }
-        let request = PaysheetSecretRequestProxy.make(context: self.executionContext, continuation: continuation)
-        fetch.call([request], thisObject: self)
-        request.startTimeout(seconds: 60)
+        self.presentations.requestSecret(id) { secret, error in
+          if let secret = secret {
+            continuation.resume(returning: secret)
+          } else {
+            continuation.resume(throwing: PaysheetSecretRequestProxy.error(error ?? "The app could not create a SetupIntent."))
+          }
+        }
       }
     }
   }

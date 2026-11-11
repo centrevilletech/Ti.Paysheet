@@ -46,6 +46,16 @@ enum PaysheetResults {
     return failed(intentId: intentId, apiCode: nil, fallbackCode: code, message: message, declineCode: nil, type: nil)
   }
 
+  /// An argument error (or no publishable key). Not an outcome: assets/ti.paysheet.js turns it into a rejected
+  /// Promise with an Error carrying `code` and `option`.
+  static func argumentError(code: String, option: String?, message: String) -> [String: Any] {
+    var info: [String: Any] = ["code": code, "message": message]
+    if let option = option {
+      info["option"] = option
+    }
+    return ["__argumentError": info]
+  }
+
   /// CustomerSheet result; `optionId` nil when nothing is selected.
   static func customer(_ status: String, optionId: String?, optionLabel: String?) -> [String: Any] {
     var r = self.status(status, intentId: nil)

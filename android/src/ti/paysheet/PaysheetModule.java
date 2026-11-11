@@ -5,6 +5,7 @@
 package ti.paysheet;
 
 import android.app.Activity;
+import android.app.ActivityOptions;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -13,9 +14,7 @@ import android.os.Looper;
 import android.util.Log;
 import com.stripe.android.PaymentConfiguration;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
-import java.util.UUID;
 import org.appcelerator.kroll.KrollDict;
 import org.appcelerator.kroll.KrollFunction;
 import org.appcelerator.kroll.KrollModule;
@@ -26,6 +25,11 @@ import org.appcelerator.titanium.TiApplication;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+/**
+ * The public presentPaymentSheet / presentCustomerSheet are in assets/ti.paysheet.js (shared with iOS); they call
+ * the _present… methods below, which resolve with an outcome, a runtime condition or an argument-error marker and
+ * never throw.
+ */
 @Kroll.module(name = "Paysheet", id = "ti.paysheet")
 public class PaysheetModule extends KrollModule
 {
@@ -33,33 +37,17 @@ public class PaysheetModule extends KrollModule
 	private static final String PREFS = "ti.paysheet";
 	private static final String PREF_RESTORED = "restoredResult";
 
-	/** The one presentation in flight (the module allows one at a time). Main thread only. */
-	private static Pending active;
+	private static final Handler MAIN = new Handler(Looper.getMainLooper());
+	private static final Presentations PRESENTATIONS = new Presentations(
+		(delayMs, task) -> {
+			MAIN.postDelayed(task, delayMs);
+			return () -> MAIN.removeCallbacks(task);
+		},
+		PaysheetModule::storeRestored);
+
 	private static Options.Init init;
 	/** The module instance of the running JavaScript context, for the "restoredresult" event. */
 	private static PaysheetModule instance;
-
-	private static final class Pending
-	{
-		final String id;
-		final String intentId;
-		final KrollPromise<Object> promise;
-		final KrollFunction callback;
-		final KrollFunction fetchSetupIntent;
-		final KrollObject owner;
-		boolean settled;
-
-		Pending(String id, String intentId, KrollPromise<Object> promise, KrollFunction callback,
-				KrollFunction fetchSetupIntent, KrollObject owner)
-		{
-			this.id = id;
-			this.intentId = intentId;
-			this.promise = promise;
-			this.callback = callback;
-			this.fetchSetupIntent = fetchSetupIntent;
-			this.owner = owner;
-		}
-	}
 
 	public PaysheetModule()
 	{
@@ -90,16 +78,38 @@ public class PaysheetModule extends KrollModule
 		return init != null;
 	}
 
-	@Kroll.method
-	public KrollPromise<Object> presentPaymentSheet(Object options, @Kroll.argument(optional = true) KrollFunction callback)
+	/** stripe-android version the module was built against (android/build.gradle pins it). */
+	static final String STRIPE_VERSION_REQUIRED = "23.26.0";
+
+	/** The stripe-android version the app actually links (read at run time; Kotlin inlines the constant). */
+	@Kroll.getProperty(name = "stripeVersion")
+	public String getStripeVersion()
 	{
-		return present(options, callback, false);
+		try {
+			return (String) Class.forName("com.stripe.android.core.version.StripeSdkVersion")
+				.getField("VERSION_NAME")
+				.get(null);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return "unknown";
+		}
+	}
+
+	@Kroll.getProperty(name = "stripeVersionRequired")
+	public String getStripeVersionRequired()
+	{
+		return STRIPE_VERSION_REQUIRED;
 	}
 
 	@Kroll.method
-	public KrollPromise<Object> presentCustomerSheet(Object options, @Kroll.argument(optional = true) KrollFunction callback)
+	public KrollPromise<Object> _presentPaymentSheet(@Kroll.argument(optional = true) Object options)
 	{
-		return present(options, callback, true);
+		return present(options, false);
+	}
+
+	@Kroll.method
+	public KrollPromise<Object> _presentCustomerSheet(@Kroll.argument(optional = true) Object options)
+	{
+		return present(options, true);
 	}
 
 	@Kroll.method
@@ -123,23 +133,24 @@ public class PaysheetModule extends KrollModule
 			result.put("restored", true);
 			return result;
 		} catch (JSONException e) {
-			Log.w(TAG, "discarding unreadable restored result", e);
+			Log.w(TAG, "discarding an unreadable restored result");
 			return null;
 		}
 	}
 
 	// ---------------------------------------------------------------------------------------------------------------
 
-	private KrollPromise<Object> present(final Object options, final KrollFunction callback, final boolean customer)
+	private KrollPromise<Object> present(final Object options, final boolean customer)
 	{
 		final KrollObject owner = getKrollObject();
 		return KrollPromise.create((promise) -> {
+			final String name = customer ? "presentCustomerSheet" : "presentPaymentSheet";
 			Options.Sheet sheet;
 			try {
 				sheet = customer ? Options.parseCustomerSheet(options) : Options.parsePaymentSheet(options);
 			} catch (Options.InvalidException e) {
-				Log.e(TAG, (customer ? "presentCustomerSheet: " : "presentPaymentSheet: ") + e.getMessage());
-				settleNow(promise, callback, owner, Results.moduleError(null, Results.INVALID_ARGUMENT, e.getMessage()));
+				Log.e(TAG, name + ": " + e.getMessage());
+				promise.resolve(new KrollDict(Results.argumentError(Results.INVALID_ARGUMENT, e.option, e.getMessage())));
 				return;
 			}
 			KrollFunction fetch = null;
@@ -147,99 +158,83 @@ public class PaysheetModule extends KrollModule
 				Object f = ((Map<?, ?>) options).get("fetchSetupIntentClientSecret");
 				if (!(f instanceof KrollFunction)) {
 					String message = "fetchSetupIntentClientSecret must be a function";
-					Log.e(TAG, "presentCustomerSheet: " + message);
-					settleNow(promise, callback, owner, Results.moduleError(null, Results.INVALID_ARGUMENT, message));
+					Log.e(TAG, name + ": " + message);
+					promise.resolve(new KrollDict(
+						Results.argumentError(Results.INVALID_ARGUMENT, "fetchSetupIntentClientSecret", message)));
 					return;
 				}
 				fetch = (KrollFunction) f;
 			}
-			String intentId = Options.intentIdFromClientSecret(sheet.intentClientSecret);
 			if (init == null) {
-				settleNow(promise, callback, owner, Results.moduleError(intentId, Results.NOT_INITIALIZED,
-					"Call initialize({ publishableKey }) before presenting a sheet."));
+				promise.resolve(new KrollDict(Results.argumentError(Results.NOT_INITIALIZED, null,
+					"Call initialize({ publishableKey }) before presenting a sheet.")));
 				return;
 			}
-			if (active != null) {
-				settleNow(promise, callback, owner,
-					Results.moduleError(intentId, Results.BUSY, "Another payment sheet is already open."));
-				return;
-			}
+
+			String intentId = Options.intentIdFromClientSecret(sheet.intentClientSecret);
 			Activity activity = TiApplication.getAppCurrentActivity();
-			if (activity == null || activity.isFinishing()) {
-				settleNow(promise, callback, owner, Results.moduleError(intentId, Results.UNAVAILABLE,
-					"There is no activity to present the sheet from."));
+			if (activity == null || activity.isFinishing() || !TiApplication.isCurrentActivityInForeground()) {
+				// Android 10+ does not let a background app start an activity; the sheet would never open.
+				promise.resolve(new KrollDict(Results.moduleError(intentId, Results.UNAVAILABLE,
+					"The app is not in the foreground, so the payment sheet cannot open.")));
 				return;
 			}
+
+			final KrollFunction fetchFn = fetch;
+			Presentations.SecretAsker asker = fetchFn == null ? null : request -> {
+				fetchFn.callAsync(owner, new Object[] { new SecretRequestProxy(request) });
+			};
+			String id = PRESENTATIONS.begin(intentId, result -> promise.resolve(new KrollDict(result)), asker);
+			if (id == null) {
+				promise.resolve(new KrollDict(
+					Results.moduleError(intentId, Results.BUSY, "Another payment sheet is already open.")));
+				return;
+			}
+
 			sheet.publishableKey = init.publishableKey;
 			sheet.stripeAccountId = init.stripeAccountId;
-			String id = UUID.randomUUID().toString();
-			active = new Pending(id, intentId, promise, callback, fetch, owner);
 			Intent intent = new Intent(activity, PaysheetHostActivity.class);
 			intent.putExtra(PaysheetHostActivity.EXTRA_ID, id);
 			intent.putExtra(PaysheetHostActivity.EXTRA_SHEET, sheet);
-			activity.startActivity(intent);
-			activity.overridePendingTransition(0, 0);
+			try {
+				// No transition: the host activity is invisible and the sheet animates itself.
+				activity.startActivity(intent, ActivityOptions.makeCustomAnimation(activity, 0, 0).toBundle());
+			} catch (RuntimeException e) {
+				Log.e(TAG, name + ": could not start the payment sheet (" + e.getClass().getSimpleName() + ")");
+				PRESENTATIONS.startFailed(id, "The payment sheet could not be started.");
+			}
 		});
-	}
-
-	private static void settleNow(KrollPromise<Object> promise, KrollFunction callback, KrollObject owner,
-								  HashMap<String, Object> result)
-	{
-		KrollDict dict = new KrollDict(result);
-		if (callback != null) {
-			callback.callAsync(owner, new Object[] { dict });
-		}
-		promise.resolve(dict);
 	}
 
 	// ---------------------------------------------------------------------------------------------------------------
 	// Called by PaysheetHostActivity (main thread)
 
+	/** Host activity started; false means the presentation is already over and the activity must finish. */
+	static boolean checkIn(String id)
+	{
+		return PRESENTATIONS.checkIn(id);
+	}
+
 	/** True while presentation {@code id} has a live JavaScript caller in this process. */
 	static boolean isLive(String id)
 	{
-		return active != null && active.id.equals(id) && !active.settled;
+		return PRESENTATIONS.isLive(id);
 	}
 
-	static String intentIdFor(String id)
-	{
-		return active != null && active.id.equals(id) ? active.intentId : null;
-	}
-
-	/**
-	 * Settles presentation {@code id}. Exactly once: later calls are ignored. When the caller is gone (the process
-	 * was restarted while the sheet was open) the result is kept for {@link #takeRestoredResult()}.
-	 */
+	/** Settles presentation {@code id} exactly once; kept for takeRestoredResult() after a process restart. */
 	static void deliver(String id, HashMap<String, Object> result)
 	{
 		if (Looper.myLooper() != Looper.getMainLooper()) {
-			new Handler(Looper.getMainLooper()).post(() -> deliver(id, result));
+			MAIN.post(() -> deliver(id, result));
 			return;
 		}
-		if (active == null || !active.id.equals(id)) {
-			storeRestored(result);
-			return;
-		}
-		Pending p = active;
-		active = null;
-		if (p.settled) {
-			return;
-		}
-		p.settled = true;
-		settleNow(p.promise, p.callback, p.owner, result);
+		PRESENTATIONS.deliver(id, result);
 	}
 
 	/** Asks JavaScript for a SetupIntent client secret (CustomerSheet); {@code done} is called exactly once. */
-	static void requestSetupIntentSecret(String id, SecretRequestProxy.Listener done)
+	static void requestSetupIntentSecret(String id, Presentations.SecretAnswer done)
 	{
-		new Handler(Looper.getMainLooper()).post(() -> {
-			if (active == null || !active.id.equals(id) || active.fetchSetupIntent == null) {
-				done.onAnswer(null, "The app is no longer able to create a SetupIntent; close and reopen the sheet.");
-				return;
-			}
-			SecretRequestProxy request = new SecretRequestProxy(done);
-			active.fetchSetupIntent.callAsync(active.owner, new Object[] { request });
-		});
+		MAIN.post(() -> PRESENTATIONS.requestSecret(id, done));
 	}
 
 	private static void storeRestored(HashMap<String, Object> result)
@@ -252,13 +247,12 @@ public class PaysheetModule extends KrollModule
 				.putString(PREF_RESTORED, json.toString())
 				.apply();
 			Log.i(TAG, "sheet finished after a process restart; result kept for takeRestoredResult()");
-			// The restarted app's JavaScript may already be running (it usually is by the time the sheet ends).
 			PaysheetModule module = instance;
 			if (module != null && module.hasListeners("restoredresult")) {
 				module.fireEvent("restoredresult", new KrollDict());
 			}
 		} catch (JSONException e) {
-			Log.w(TAG, "could not keep restored result", e);
+			Log.w(TAG, "could not keep the restored result");
 		}
 	}
 
@@ -266,9 +260,7 @@ public class PaysheetModule extends KrollModule
 	private static JSONObject toJson(Map<String, Object> map) throws JSONException
 	{
 		JSONObject o = new JSONObject();
-		Iterator<Map.Entry<String, Object>> it = map.entrySet().iterator();
-		while (it.hasNext()) {
-			Map.Entry<String, Object> e = it.next();
+		for (Map.Entry<String, Object> e : map.entrySet()) {
 			Object v = e.getValue();
 			o.put(e.getKey(), v instanceof Map ? toJson((Map<String, Object>) v) : (v == null ? JSONObject.NULL : v));
 		}

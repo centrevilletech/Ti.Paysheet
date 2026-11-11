@@ -90,8 +90,8 @@ for case let c as [String: Any] in v["options"] as! [Any] {
     }
     if ok { passed += 1 }
   } catch let e as PaysheetOptions.Invalid {
-    if e.message == expectedError { passed += 1 } else {
-      fail(name, "expected \(expectedError.map { "error '\($0)'" } ?? "success"), got error '\(e.message)'")
+    if e.message == expectedError && (c["option"] == nil || (c["option"] as? String) == e.option) { passed += 1 } else {
+      fail(name, "expected \(expectedError.map { "error '\($0)'" } ?? "success"), got error '\(e.message)' on '\(e.option)'")
     }
   } catch {
     fail(name, "unexpected \(error)")
@@ -113,6 +113,12 @@ for case let c as [String: Any] in v["results"] as! [Any] {
                                    fallbackCode: normalize(c["fallbackCode"]) as? String, message: normalize(c["message"]) as? String,
                                    declineCode: normalize(c["declineCode"]) as? String, type: normalize(c["type"]) as? String)
   if same(c["expect"], got) { passed += 1 } else { fail("result \(c["name"]!)", "expected \(c["expect"]!), got \(got)") }
+}
+
+for case let c as [String: Any] in v["argumentErrors"] as! [Any] {
+  let got = PaysheetResults.argumentError(code: c["code"] as! String, option: normalize(c["option"]) as? String,
+                                          message: c["message"] as! String)
+  if same(c["expect"], got) { passed += 1 } else { fail("argument error \(c["code"]!)", "expected \(c["expect"]!), got \(got)") }
 }
 
 print("\(failed == 0 ? "PASS" : "FAIL") \(passed)/\(passed + failed) (Swift)")

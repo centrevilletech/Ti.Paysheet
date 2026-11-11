@@ -180,4 +180,35 @@ final class ExampleFlows: XCTestCase {
         waitForText("url received: paysheetexample://stripe-redirect", timeout: 60)
         waitForText("succeeded", timeout: 60)
     }
+
+    /// Only with an app deliberately linked against another stripe-ios version
+    /// (run with TEST_RUNNER_PAYSHEET_EXPECT_VERSION_GUARD=1): the module must refuse instead of presenting.
+    func test11VersionGuard() throws {
+        guard ProcessInfo.processInfo.environment["PAYSHEET_EXPECT_VERSION_GUARD"] != nil else {
+            throw XCTSkip("needs an app linked against a different stripe-ios version")
+        }
+        tapButton("Pay $10.99 (guest)")
+        waitForText("ti.paysheet was built against stripe-ios")
+        waitForText("\"code\":\"unavailable\"")
+        XCTAssertFalse(app.textFields["Card number"].firstMatch.exists, "the sheet must not open")
+    }
+
+    /// The app closes the window a sheet was presented from; Stripe never reports a result for that sheet. The next
+    /// presentation must settle it as interrupted and open normally instead of answering busy.
+    func test12WindowClosedUnderSheet() {
+        tapButton("Close the window under the sheet")
+        XCTAssertTrue(app.textFields["Card number"].firstMatch.waitForExistence(timeout: 30), "sheet did not open")
+        waitForText("window closed under the sheet", timeout: 30)
+        tapButton("Pay $10.99 (guest)")
+        waitForText("\"code\":\"interrupted\"", timeout: 30)
+        XCTAssertTrue(app.textFields["Card number"].firstMatch.waitForExistence(timeout: 30), "second sheet did not open")
+        app.buttons["Close"].firstMatch.tap()
+        waitForText("\"status\":\"canceled\"")
+    }
+
+    /// The contract of the JavaScript layer against the real module (also runs at launch).
+    func test13SelfTest() {
+        tapButton("Run self-test")
+        waitForText("self-test: 15/15 passed", timeout: 60)
+    }
 }

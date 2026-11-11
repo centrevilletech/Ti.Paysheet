@@ -9,53 +9,37 @@ import org.appcelerator.kroll.annotations.Kroll;
 
 /**
  * Handed to {@code fetchSetupIntentClientSecret(request)}: the app answers once with {@code resolve(secret)} or
- * {@code reject(message)}. Later answers are ignored.
+ * {@code reject(message)}. Later answers, and answers after the timeout, are ignored (see SecretRequest).
  */
 @Kroll.proxy
 public class SecretRequestProxy extends KrollProxy
 {
-	interface Listener {
-		/** Exactly one of {@code secret} and {@code error} is non-null. */
-		void onAnswer(String secret, String error);
-	}
-
-	private Listener listener;
+	private SecretRequest request;
 
 	public SecretRequestProxy()
 	{
 		super();
 	}
 
-	SecretRequestProxy(Listener listener)
+	SecretRequestProxy(SecretRequest request)
 	{
 		super();
-		this.listener = listener;
+		this.request = request;
 	}
 
 	@Kroll.method
-	public void resolve(Object secret)
+	public void resolve(@Kroll.argument(optional = true) Object secret)
 	{
-		if (!(secret instanceof String) || ((String) secret).trim().isEmpty()) {
-			answer(null, "fetchSetupIntentClientSecret resolved without a SetupIntent client secret");
-			return;
+		if (request != null) {
+			request.resolve(secret);
 		}
-		answer((String) secret, null);
 	}
 
 	@Kroll.method
 	public void reject(@Kroll.argument(optional = true) Object message)
 	{
-		answer(null, message instanceof String && !((String) message).isEmpty()
-						 ? (String) message
-						 : "The app could not create a SetupIntent.");
-	}
-
-	private synchronized void answer(String secret, String error)
-	{
-		Listener l = listener;
-		listener = null;
-		if (l != null) {
-			l.onAnswer(secret, error);
+		if (request != null) {
+			request.reject(message);
 		}
 	}
 

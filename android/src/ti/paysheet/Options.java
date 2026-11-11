@@ -26,10 +26,13 @@ public final class Options
 	public static final class InvalidException extends Exception
 	{
 		private static final long serialVersionUID = 1L;
+		/** The offending option, e.g. "customer.id" or "appearance.colors.primary". */
+		public final String option;
 
-		InvalidException(String message)
+		InvalidException(String option, String message)
 		{
 			super(message);
+			this.option = option;
 		}
 	}
 
@@ -111,7 +114,7 @@ public final class Options
 		Init init = new Init();
 		init.publishableKey = requiredString(o, "publishableKey", "publishableKey");
 		if (!init.publishableKey.startsWith("pk_")) {
-			throw new InvalidException("publishableKey must be a publishable key (pk_test_… or pk_live_…), never a secret key");
+			throw new InvalidException("publishableKey", "publishableKey must be a publishable key (pk_test_… or pk_live_…), never a secret key");
 		}
 		init.stripeAccountId = optionalString(o, "stripeAccountId", "stripeAccountId");
 		return init;
@@ -124,7 +127,7 @@ public final class Options
 		String pi = optionalString(o, "paymentIntentClientSecret", "paymentIntentClientSecret");
 		String si = optionalString(o, "setupIntentClientSecret", "setupIntentClientSecret");
 		if ((pi == null) == (si == null)) {
-			throw new InvalidException("exactly one of paymentIntentClientSecret and setupIntentClientSecret is required");
+			throw new InvalidException("paymentIntentClientSecret", "exactly one of paymentIntentClientSecret and setupIntentClientSecret is required");
 		}
 		s.mode = pi != null ? "payment" : "setup";
 		s.intentClientSecret = pi != null ? pi : si;
@@ -138,7 +141,7 @@ public final class Options
 				optionalString(c, "customerSessionClientSecret", "customer.customerSessionClientSecret");
 			s.ephemeralKeySecret = optionalString(c, "ephemeralKeySecret", "customer.ephemeralKeySecret");
 			if ((s.customerSessionClientSecret == null) == (s.ephemeralKeySecret == null)) {
-				throw new InvalidException(
+				throw new InvalidException("customer",
 					"customer needs exactly one of customerSessionClientSecret and ephemeralKeySecret");
 			}
 		}
@@ -162,11 +165,11 @@ public final class Options
 				"googlePay.countryCode");
 			String currency = optionalString(g, "currencyCode", "googlePay.currencyCode");
 			if (currency != null && !currency.matches("[A-Za-z]{3}")) {
-				throw new InvalidException("googlePay.currencyCode must be a three-letter ISO 4217 code");
+				throw new InvalidException("googlePay.currencyCode", "googlePay.currencyCode must be a three-letter ISO 4217 code");
 			}
 			s.googlePayCurrencyCode = currency != null ? currency.toUpperCase(java.util.Locale.ROOT) : null;
 			if ("setup".equals(s.mode) && s.googlePayCurrencyCode == null) {
-				throw new InvalidException("googlePay.currencyCode is required in setup mode");
+				throw new InvalidException("googlePay.currencyCode", "googlePay.currencyCode is required in setup mode");
 			}
 		}
 		return s;
@@ -180,18 +183,18 @@ public final class Options
 		parseCommon(o, s);
 		Object customer = o.get("customer");
 		if (customer == null) {
-			throw new InvalidException("customer is required");
+			throw new InvalidException("customer", "customer is required");
 		}
 		Map<String, Object> c = object(customer, "customer");
 		s.customerId = requiredString(c, "id", "customer.id");
 		if (c.get("ephemeralKeySecret") != null) {
-			throw new InvalidException("presentCustomerSheet needs customer.customerSessionClientSecret; ephemeral keys are not supported");
+			throw new InvalidException("customer.ephemeralKeySecret", "presentCustomerSheet needs customer.customerSessionClientSecret; ephemeral keys are not supported");
 		}
 		s.customerSessionClientSecret =
 			requiredString(c, "customerSessionClientSecret", "customer.customerSessionClientSecret");
 		Object fetch = o.get("fetchSetupIntentClientSecret");
 		if (fetch == null) {
-			throw new InvalidException("fetchSetupIntentClientSecret is required");
+			throw new InvalidException("fetchSetupIntentClientSecret", "fetchSetupIntentClientSecret is required");
 		}
 		// The function itself is checked by the platform code (it is not a plain value).
 		s.headerTitle = optionalString(o, "headerTitle", "headerTitle");
@@ -205,7 +208,7 @@ public final class Options
 		s.merchantDisplayName = requiredString(o, "merchantDisplayName", "merchantDisplayName");
 		s.returnURL = optionalString(o, "returnURL", "returnURL");
 		if (s.returnURL != null && !s.returnURL.matches("[A-Za-z][A-Za-z0-9+.-]*:.*")) {
-			throw new InvalidException("returnURL must be an absolute URL with your app's scheme, e.g. myapp://stripe-redirect");
+			throw new InvalidException("returnURL", "returnURL must be an absolute URL with your app's scheme, e.g. myapp://stripe-redirect");
 		}
 		s.style = optionalEnum(o, "style", "style", STYLES, "automatic");
 
@@ -262,7 +265,7 @@ public final class Options
 			a.fontFamily = optionalString(f, "family", "appearance.font.family");
 			a.fontScale = optionalNumber(f, "scale", "appearance.font.scale");
 			if (a.fontScale != null && a.fontScale == 0f) {
-				throw new InvalidException("appearance.font.scale must be greater than 0");
+				throw new InvalidException("appearance.font.scale", "appearance.font.scale must be greater than 0");
 			}
 		}
 		Object button = o.get("primaryButton");
@@ -298,17 +301,17 @@ public final class Options
 		Map<String, Object> m = object(raw, path);
 		for (Map.Entry<String, Object> e : m.entrySet()) {
 			if (!allowed.contains(e.getKey())) {
-				throw new InvalidException(path + "." + e.getKey() + " is not a known colour");
+				throw new InvalidException(path + "." + e.getKey(), path + "." + e.getKey() + " is not a known colour");
 			}
 			if (e.getValue() == null) {
 				continue;
 			}
 			if (!(e.getValue() instanceof String)) {
-				throw new InvalidException(path + "." + e.getKey() + " must be a colour string such as '#0A84FF'");
+				throw new InvalidException(path + "." + e.getKey(), path + "." + e.getKey() + " must be a colour string such as '#0A84FF'");
 			}
 			Integer argb = parseColor((String) e.getValue());
 			if (argb == null) {
-				throw new InvalidException(path + "." + e.getKey() + ": invalid colour '" + e.getValue()
+				throw new InvalidException(path + "." + e.getKey(), path + "." + e.getKey() + ": invalid colour '" + e.getValue()
 										   + "' (use #RGB, #RRGGBB or #AARRGGBB)");
 			}
 			out.put(e.getKey(), argb);
@@ -347,7 +350,7 @@ public final class Options
 	private static Map<String, Object> object(Object raw, String path) throws InvalidException
 	{
 		if (!(raw instanceof Map)) {
-			throw new InvalidException(path + " must be an object");
+			throw new InvalidException(path, path + " must be an object");
 		}
 		return (Map<String, Object>) raw;
 	}
@@ -356,7 +359,7 @@ public final class Options
 	{
 		String s = optionalString(o, key, path);
 		if (s == null) {
-			throw new InvalidException(path + " is required");
+			throw new InvalidException(path, path + " is required");
 		}
 		return s;
 	}
@@ -368,11 +371,11 @@ public final class Options
 			return null;
 		}
 		if (!(v instanceof String)) {
-			throw new InvalidException(path + " must be a string");
+			throw new InvalidException(path, path + " must be a string");
 		}
 		String s = ((String) v).trim();
 		if (s.isEmpty()) {
-			throw new InvalidException(path + " must not be empty");
+			throw new InvalidException(path, path + " must not be empty");
 		}
 		return s;
 	}
@@ -385,7 +388,7 @@ public final class Options
 			return fallback;
 		}
 		if (!(v instanceof Boolean)) {
-			throw new InvalidException(path + " must be a boolean");
+			throw new InvalidException(path, path + " must be a boolean");
 		}
 		return (Boolean) v;
 	}
@@ -397,11 +400,11 @@ public final class Options
 			return null;
 		}
 		if (!(v instanceof Number)) {
-			throw new InvalidException(path + " must be a number");
+			throw new InvalidException(path, path + " must be a number");
 		}
 		float f = ((Number) v).floatValue();
 		if (Float.isNaN(f) || Float.isInfinite(f) || f < 0) {
-			throw new InvalidException(path + " must be a number of 0 or more");
+			throw new InvalidException(path, path + " must be a number of 0 or more");
 		}
 		return f;
 	}
@@ -414,7 +417,7 @@ public final class Options
 			return fallback;
 		}
 		if (!allowed.contains(s)) {
-			throw new InvalidException(path + " must be one of " + String.join(", ", allowed));
+			throw new InvalidException(path, path + " must be one of " + String.join(", ", allowed));
 		}
 		return s;
 	}
@@ -422,7 +425,7 @@ public final class Options
 	private static String countryCode(String s, String path) throws InvalidException
 	{
 		if (!s.matches("[A-Za-z]{2}")) {
-			throw new InvalidException(path + " must be a two-letter ISO 3166 country code");
+			throw new InvalidException(path, path + " must be a two-letter ISO 3166 country code");
 		}
 		return s.toUpperCase(java.util.Locale.ROOT);
 	}

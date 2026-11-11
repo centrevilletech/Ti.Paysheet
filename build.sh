@@ -24,6 +24,8 @@ mkdir -p "$SRC/dist"
 for platform in "${PLATFORMS[@]}"; do
 	rsync -a --exclude build --exclude dist --exclude libs --exclude metadata.json "$SRC/$platform/" "$TMP/$platform/"
 	cp "$SRC/LICENSE" "$TMP/$platform/LICENSE"   # packaged into the zip
+	mkdir -p "$TMP/$platform/assets"
+	cp "$SRC/assets/ti.paysheet.js" "$TMP/$platform/assets/"   # shared JavaScript layer, merged into the module
 	(cd "$TMP/$platform" && ti build -p "$platform" --build-only)
 	cp "$TMP/$platform"/dist/*.zip "$SRC/dist/"
 done

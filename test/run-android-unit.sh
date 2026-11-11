@@ -4,6 +4,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$HERE/build/android"
 rm -rf "$OUT" && mkdir -p "$OUT"
-javac -d "$OUT" "$HERE/../android/src/ti/paysheet/Options.java" "$HERE/../android/src/ti/paysheet/Results.java" \
-	"$HERE/android/VectorsTest.java"
+SRC="$HERE/../android/src/ti/paysheet"
+javac -d "$OUT" "$SRC/Options.java" "$SRC/Results.java" "$SRC/Presentations.java" "$SRC/SecretRequest.java" \
+	"$HERE/android/VectorsTest.java" "$HERE/android/PresentationsTest.java"
 java -cp "$OUT" ti.paysheet.VectorsTest "$HERE/vectors.json"
+java -cp "$OUT" ti.paysheet.PresentationsTest

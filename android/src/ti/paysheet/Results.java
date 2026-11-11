@@ -63,6 +63,23 @@ public final class Results
 		return failed(intentId, null, code, message, null, null);
 	}
 
+	/**
+	 * An argument error (or no publishable key). Not an outcome: the shared JavaScript layer (assets/ti.paysheet.js)
+	 * turns it into a rejected Promise with an Error carrying {@code code} and {@code option}.
+	 */
+	public static HashMap<String, Object> argumentError(String code, String option, String message)
+	{
+		HashMap<String, Object> info = new HashMap<>();
+		info.put("code", code);
+		if (option != null) {
+			info.put("option", option);
+		}
+		info.put("message", message);
+		HashMap<String, Object> r = new HashMap<>();
+		r.put("__argumentError", info);
+		return r;
+	}
+
 	/** CustomerSheet result; {@code optionId} null when nothing is selected. */
 	public static HashMap<String, Object> customer(String status, String optionId, String optionLabel)
 	{
