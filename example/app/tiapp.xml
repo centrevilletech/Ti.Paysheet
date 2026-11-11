@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ti:app xmlns:ti="http://ti.tidev.io">
+	<id>ti.paysheet.example</id>
+	<name>Paysheet Example</name>
+	<version>1.0.0</version>
+	<publisher>Centreville Tech LLC</publisher>
+	<url>https://github.com/centrevilletech/Ti.Paysheet</url>
+	<description>Ti.Paysheet example app</description>
+	<copyright>Copyright (c) 2026 Centreville Tech LLC</copyright>
+	<guid>3f0a1e52-4c4b-4f61-9a43-1d2f6b0e8c11</guid>
+	<property name="ti.ui.defaultunit" type="string">dp</property>
+	<property name="run-on-main-thread" type="bool">true</property>
+	<ios>
+		<min-ios-ver>15.0</min-ios-ver>
+		<plist>
+			<dict>
+				<key>UISupportedInterfaceOrientations</key>
+				<array>
+					<string>UIInterfaceOrientationPortrait</string>
+					<string>UIInterfaceOrientationLandscapeLeft</string>
+					<string>UIInterfaceOrientationLandscapeRight</string>
+				</array>
+				<!-- 3-D Secure / redirect return: returnURL below uses this scheme. -->
+				<key>CFBundleURLTypes</key>
+				<array>
+					<dict>
+						<key>CFBundleURLName</key>
+						<string>ti.paysheet.example</string>
+						<key>CFBundleURLSchemes</key>
+						<array>
+							<string>paysheetexample</string>
+						</array>
+					</dict>
+				</array>
+				<!-- The example talks to its test server on localhost over plain HTTP. -->
+				<key>NSAppTransportSecurity</key>
+				<dict>
+					<key>NSAllowsLocalNetworking</key>
+					<true/>
+				</dict>
+			</dict>
+		</plist>
+	</ios>
+	<android xmlns:android="http://schemas.android.com/apk/res/android">
+		<manifest>
+			<!-- The example talks to its test server on localhost over plain HTTP (adb reverse). -->
+			<application android:usesCleartextTraffic="true" />
+		</manifest>
+	</android>
+	<modules>
+		<module>ti.paysheet</module>
+	</modules>
+	<deployment-targets>
+		<target device="android">true</target>
+		<target device="iphone">true</target>
+		<target device="ipad">false</target>
+	</deployment-targets>
+	<sdk-version>13.4.1.GA</sdk-version>
+</ti:app>

@@ -1,0 +1,13 @@
+// Ti.Paysheet: applied by Titanium's generated module build script.
+
+dependencies {
+	// Pinned on purpose: PaymentSheet's API changes between minor versions. Update deliberately, then re-test.
+	implementation 'com.stripe:paymentsheet:23.26.0'
+}
+
+android {
+	defaultConfig {
+		// Shipped inside the module's AAR, applied when an app enables R8. Stripe's AARs carry their own rules.
+		consumerProguardFiles "${projectDir}/../../proguard-rules.pro"
+	}
+}

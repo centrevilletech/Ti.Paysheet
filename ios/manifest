@@ -1,0 +1,18 @@
+#
+# Ti.Paysheet module manifest
+#
+version: 1.0.0
+apiversion: 2
+architectures: arm64 x86_64
+mac: false
+description: Stripe PaymentSheet and CustomerSheet for Titanium
+author: Centreville Tech LLC
+license: Apache-2.0
+copyright: Copyright (c) 2026 Centreville Tech LLC
+
+# these should not be edited
+name: paysheet
+moduleid: ti.paysheet
+guid: 7b25f50b-42a7-4417-9aa7-4541da46f353
+platform: iphone
+minsdk: 13.4.0.GA

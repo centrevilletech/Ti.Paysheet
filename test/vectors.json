@@ -1,0 +1,92 @@
+{
+	"comment": "Shared test vectors for Options.java / PaysheetOptions.swift and Results.java / PaysheetResults.swift. Both runners must pass all of them.",
+	"options": [
+		{ "name": "initialize ok", "parse": "initialize", "input": { "publishableKey": "pk_test_123", "stripeAccountId": "acct_1" }, "expect": { "publishableKey": "pk_test_123", "stripeAccountId": "acct_1" } },
+		{ "name": "initialize secret key", "parse": "initialize", "input": { "publishableKey": "sk_test_123" }, "error": "publishableKey must be a publishable key (pk_test_… or pk_live_…), never a secret key" },
+		{ "name": "initialize missing", "parse": "initialize", "input": {}, "error": "publishableKey is required" },
+		{ "name": "initialize not object", "parse": "initialize", "input": "pk_test_123", "error": "options must be an object" },
+
+		{ "name": "payment minimal", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop" },
+		  "expect": { "mode": "payment", "intentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "style": "automatic", "paymentMethodLayout": "automatic", "allowsDelayedPaymentMethods": false } },
+		{ "name": "setup minimal", "parse": "payment", "input": { "setupIntentClientSecret": "seti_1_secret_2", "merchantDisplayName": "Shop" }, "expect": { "mode": "setup", "intentClientSecret": "seti_1_secret_2" } },
+		{ "name": "trims strings", "parse": "payment", "input": { "paymentIntentClientSecret": " pi_1_secret_2 ", "merchantDisplayName": "  Shop " }, "expect": { "intentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop" } },
+		{ "name": "null treated as absent", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "setupIntentClientSecret": null, "merchantDisplayName": "Shop", "customer": null }, "expect": { "mode": "payment" } },
+		{ "name": "no secret", "parse": "payment", "input": { "merchantDisplayName": "Shop" }, "error": "exactly one of paymentIntentClientSecret and setupIntentClientSecret is required" },
+		{ "name": "both secrets", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "setupIntentClientSecret": "seti_1_secret_2", "merchantDisplayName": "Shop" }, "error": "exactly one of paymentIntentClientSecret and setupIntentClientSecret is required" },
+		{ "name": "secret not string", "parse": "payment", "input": { "paymentIntentClientSecret": 12, "merchantDisplayName": "Shop" }, "error": "paymentIntentClientSecret must be a string" },
+		{ "name": "empty secret", "parse": "payment", "input": { "paymentIntentClientSecret": "  ", "merchantDisplayName": "Shop" }, "error": "paymentIntentClientSecret must not be empty" },
+		{ "name": "no merchant", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2" }, "error": "merchantDisplayName is required" },
+		{ "name": "options not object", "parse": "payment", "input": null, "error": "options must be an object" },
+
+		{ "name": "customer session", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "customer": { "id": "cus_1", "customerSessionClientSecret": "cuss_1" } },
+		  "expect": { "customerId": "cus_1", "customerSessionClientSecret": "cuss_1", "ephemeralKeySecret": null } },
+		{ "name": "customer ephemeral", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "customer": { "id": "cus_1", "ephemeralKeySecret": "ek_1" } },
+		  "expect": { "customerId": "cus_1", "ephemeralKeySecret": "ek_1", "customerSessionClientSecret": null } },
+		{ "name": "customer neither", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "customer": { "id": "cus_1" } }, "error": "customer needs exactly one of customerSessionClientSecret and ephemeralKeySecret" },
+		{ "name": "customer both", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "customer": { "id": "cus_1", "ephemeralKeySecret": "ek_1", "customerSessionClientSecret": "cuss_1" } }, "error": "customer needs exactly one of customerSessionClientSecret and ephemeralKeySecret" },
+		{ "name": "customer no id", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "customer": { "ephemeralKeySecret": "ek_1" } }, "error": "customer.id is required" },
+		{ "name": "customer not object", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "customer": "cus_1" }, "error": "customer must be an object" },
+
+		{ "name": "return url ok", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "returnURL": "myapp://stripe-redirect" }, "expect": { "returnURL": "myapp://stripe-redirect" } },
+		{ "name": "return url relative", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "returnURL": "stripe-redirect" }, "error": "returnURL must be an absolute URL with your app's scheme, e.g. myapp://stripe-redirect" },
+		{ "name": "flags and enums", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "allowsDelayedPaymentMethods": true, "style": "dark", "paymentMethodLayout": "vertical", "primaryButtonLabel": "Book now" },
+		  "expect": { "allowsDelayedPaymentMethods": true, "style": "dark", "paymentMethodLayout": "vertical", "primaryButtonLabel": "Book now" } },
+		{ "name": "bad boolean", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "allowsDelayedPaymentMethods": "yes" }, "error": "allowsDelayedPaymentMethods must be a boolean" },
+		{ "name": "number is not boolean", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "allowsDelayedPaymentMethods": 1 }, "error": "allowsDelayedPaymentMethods must be a boolean" },
+		{ "name": "bad style", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "style": "sepia" }, "error": "style must be one of automatic, light, dark" },
+		{ "name": "bad layout", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "paymentMethodLayout": "grid" }, "error": "paymentMethodLayout must be one of automatic, horizontal, vertical" },
+
+		{ "name": "billing details", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "defaultBillingDetails": { "name": "A B", "email": "a@example.com", "address": { "line1": "1 Main St", "postalCode": "35004", "country": "us" } } },
+		  "expect": { "billing.name": "A B", "billing.email": "a@example.com", "billing.line1": "1 Main St", "billing.postalCode": "35004", "billing.country": "US", "billing.hasAddress": true } },
+		{ "name": "billing bad country", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "defaultBillingDetails": { "address": { "country": "USA" } } }, "error": "defaultBillingDetails.address.country must be a two-letter ISO 3166 country code" },
+		{ "name": "collection", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "billingDetailsCollection": { "name": "always", "email": "never", "address": "full", "attachDefaultsToPaymentMethod": true } },
+		  "expect": { "collectName": "always", "collectEmail": "never", "collectPhone": "automatic", "collectAddress": "full", "attachDefaultsToPaymentMethod": true } },
+		{ "name": "collection bad address", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "billingDetailsCollection": { "address": "always" } }, "error": "billingDetailsCollection.address must be one of automatic, never, full" },
+
+		{ "name": "appearance", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "appearance": { "colors": { "primary": "#0A84FF", "danger": "#F00" }, "colorsDark": { "primary": "#800A84FF" }, "cornerRadius": 12, "borderWidth": 0.5, "font": { "family": "Inter", "scale": 1.1 }, "primaryButton": { "backgroundColor": "#112233", "cornerRadius": 24, "height": 52, "font": { "size": 17 }, "dark": { "textColor": "#FFFFFF" } } } },
+		  "expect": { "colors.primary": "FF0A84FF", "colors.danger": "FFFF0000", "colorsDark.primary": "800A84FF", "cornerRadius": 12, "borderWidth": 0.5, "fontFamily": "Inter", "fontScale": 1.1, "button.backgroundColor": "FF112233", "buttonDark.textColor": "FFFFFFFF", "buttonCornerRadius": 24, "buttonHeight": 52, "buttonFontSize": 17 } },
+		{ "name": "bad colour", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "appearance": { "colors": { "primary": "blue" } } }, "error": "appearance.colors.primary: invalid colour 'blue' (use #RGB, #RRGGBB or #AARRGGBB)" },
+		{ "name": "unknown colour key", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "appearance": { "colors": { "accent": "#FFFFFF" } } }, "error": "appearance.colors.accent is not a known colour" },
+		{ "name": "colour not string", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "appearance": { "colors": { "primary": 255 } } }, "error": "appearance.colors.primary must be a colour string such as '#0A84FF'" },
+		{ "name": "negative radius", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "appearance": { "cornerRadius": -1 } }, "error": "appearance.cornerRadius must be a number of 0 or more" },
+		{ "name": "radius not number", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "appearance": { "cornerRadius": "12" } }, "error": "appearance.cornerRadius must be a number" },
+		{ "name": "zero font scale", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "appearance": { "font": { "scale": 0 } } }, "error": "appearance.font.scale must be greater than 0" },
+
+		{ "name": "apple pay", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "applePay": { "merchantId": "merchant.com.example", "merchantCountryCode": "us" } }, "expect": { "applePayMerchantId": "merchant.com.example", "applePayCountryCode": "US" } },
+		{ "name": "apple pay no merchant", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "applePay": { "merchantCountryCode": "US" } }, "error": "applePay.merchantId is required" },
+		{ "name": "google pay", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "googlePay": { "countryCode": "us", "currencyCode": "usd" } }, "expect": { "googlePayEnvironment": "test", "googlePayCountryCode": "US", "googlePayCurrencyCode": "USD" } },
+		{ "name": "google pay production", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "googlePay": { "environment": "production", "countryCode": "US" } }, "expect": { "googlePayEnvironment": "production", "googlePayCurrencyCode": null } },
+		{ "name": "google pay bad currency", "parse": "payment", "input": { "paymentIntentClientSecret": "pi_1_secret_2", "merchantDisplayName": "Shop", "googlePay": { "countryCode": "US", "currencyCode": "dollars" } }, "error": "googlePay.currencyCode must be a three-letter ISO 4217 code" },
+		{ "name": "google pay setup needs currency", "parse": "payment", "input": { "setupIntentClientSecret": "seti_1_secret_2", "merchantDisplayName": "Shop", "googlePay": { "countryCode": "US" } }, "error": "googlePay.currencyCode is required in setup mode" },
+
+		{ "name": "customer sheet ok", "parse": "customer", "input": { "merchantDisplayName": "Shop", "customer": { "id": "cus_1", "customerSessionClientSecret": "cuss_1" }, "fetchSetupIntentClientSecret": "<function>", "headerTitle": "Cards", "googlePay": true },
+		  "expect": { "mode": "customer", "customerId": "cus_1", "customerSessionClientSecret": "cuss_1", "headerTitle": "Cards", "googlePayEnabled": true, "applePayEnabled": false } },
+		{ "name": "customer sheet no customer", "parse": "customer", "input": { "merchantDisplayName": "Shop", "fetchSetupIntentClientSecret": "<function>" }, "error": "customer is required" },
+		{ "name": "customer sheet ephemeral", "parse": "customer", "input": { "merchantDisplayName": "Shop", "customer": { "id": "cus_1", "ephemeralKeySecret": "ek_1" }, "fetchSetupIntentClientSecret": "<function>" }, "error": "presentCustomerSheet needs customer.customerSessionClientSecret; ephemeral keys are not supported" },
+		{ "name": "customer sheet no fetch", "parse": "customer", "input": { "merchantDisplayName": "Shop", "customer": { "id": "cus_1", "customerSessionClientSecret": "cuss_1" } }, "error": "fetchSetupIntentClientSecret is required" }
+	],
+	"colors": [
+		{ "input": "#0A84FF", "argb": "FF0A84FF" },
+		{ "input": "#80FFFFFF", "argb": "80FFFFFF" },
+		{ "input": "#abc", "argb": "FFAABBCC" },
+		{ "input": "#00000000", "argb": "00000000" },
+		{ "input": "0A84FF", "argb": null },
+		{ "input": "#0A84F", "argb": null },
+		{ "input": "#GGGGGG", "argb": null },
+		{ "input": "red", "argb": null }
+	],
+	"intentIds": [
+		{ "input": "pi_3AbC_secret_xyz", "id": "pi_3AbC" },
+		{ "input": "seti_1Q_secret_abc_def", "id": "seti_1Q" },
+		{ "input": "garbage", "id": null },
+		{ "input": "_secret_x", "id": null }
+	],
+	"results": [
+		{ "name": "api error", "intentId": "pi_1", "apiCode": "card_declined", "fallbackCode": "sdk_error", "message": "Your card was declined.", "declineCode": "insufficient_funds", "type": "card_error",
+		  "expect": { "status": "failed", "intentId": "pi_1", "error": { "code": "card_declined", "message": "Your card was declined.", "declineCode": "insufficient_funds", "type": "card_error" } } },
+		{ "name": "module error", "intentId": null, "apiCode": null, "fallbackCode": "busy", "message": "Another payment sheet is already open.", "declineCode": null, "type": null,
+		  "expect": { "status": "failed", "error": { "code": "busy", "message": "Another payment sheet is already open.", "declineCode": null, "type": null } } },
+		{ "name": "empty strings become defaults", "intentId": "seti_1", "apiCode": "", "fallbackCode": "", "message": " ", "declineCode": "", "type": "",
+		  "expect": { "status": "failed", "intentId": "seti_1", "error": { "code": "sdk_error", "message": "Something went wrong with the payment sheet.", "declineCode": null, "type": null } } }
+	]
+}

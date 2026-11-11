@@ -1,0 +1,13 @@
+{
+	"dependencies": [
+		{
+			"repositoryURL": "https://github.com/stripe/stripe-ios-spm",
+			"requirementKind": "upToNextMinorVersion",
+			"requirementMinimumVersion": "26.16.1",
+			"linkage": "host",
+			"products": [
+				{ "productName": "StripePaymentSheet" }
+			]
+		}
+	]
+}
