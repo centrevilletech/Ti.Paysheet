@@ -12,6 +12,19 @@ iOS and Android, built on Stripe's current SDKs:
 Titanium SDK 13.4.0.GA or later (the iOS side relies on the Swift Package support
 that arrived in 13.4).
 
+## Screenshots
+
+The [example app](example/) with Stripe test-mode keys, on an iOS 27 simulator (iPhone 17)
+and an Android 15 device image. The colours, corner radius and button shape are the
+example's [appearance](#appearance); the payment methods listed are the ones enabled in
+the Stripe account.
+
+| | iOS | Android |
+| --- | --- | --- |
+| PaymentSheet, new card | <img src="docs/screenshots/ios-payment-sheet.png" width="260" alt="PaymentSheet on iOS: the card form filled in with Stripe's test card 4242 4242 4242 4242, the save-card box ticked and a Pay $10.99 button"> | <img src="docs/screenshots/android-payment-sheet.png" width="260" alt="PaymentSheet on Android: the card form filled in with Stripe's test card 4242 4242 4242 4242, the save-card box ticked and a Pay $10.99 button"> |
+| PaymentSheet, saved card | <img src="docs/screenshots/ios-saved-card.png" width="260" alt="PaymentSheet on iOS with a Customer Session: a saved Visa ending 4242 selected above the list of new payment methods"> | <img src="docs/screenshots/android-saved-card.png" width="260" alt="PaymentSheet on Android with a Customer Session: a saved Visa ending 4242 selected above the list of new payment methods"> |
+| CustomerSheet | <img src="docs/screenshots/ios-customer-sheet.png" width="260" alt="CustomerSheet on iOS: Manage your payment methods, with an Add tile, a saved Visa ending 4242 selected and a Confirm button"> | <img src="docs/screenshots/android-customer-sheet.png" width="260" alt="CustomerSheet on Android: Manage your payment methods, with an Add tile and a saved Visa ending 4242 selected"> |
+
 ## Why this exists
 
 Stripe's prebuilt payment UI is the safest way to take a card in a mobile app:
@@ -677,8 +690,9 @@ read the intent back from Stripe's API.
 | Host-activity watchdog (start silently blocked while the app is in the foreground) | unit test only | – |
 | Apple Pay | – | **not tested** (needs a merchant id, a Stripe Apple Pay certificate and a signed build) |
 | Google Pay | **not tested** (no Play services on the test image) | – |
-| Physical devices | **not tested** | **not tested** |
 | ProGuard / R8 minified release build | **not tested** | – |
+
+Since this table was written the module has been used on physical devices in live apps; those runs are not part of the scripted checks above.
 
 ## Third-party notices
 
